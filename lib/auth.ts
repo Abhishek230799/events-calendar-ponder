@@ -5,7 +5,7 @@ import { db } from "./db";
  * The one function the rest of the app depends on for "who's logged in."
  * Everything downstream — API routes, server components — calls this
  * instead of touching Auth.js's `auth()` directly. That's what keeps a
- * future real-Ponders-auth swap to a one-file change: this function's
+ * future real-Ponder-auth swap to a one-file change: this function's
  * signature (User | null) is the contract, not how it's implemented.
  */
 export async function getCurrentUser() {

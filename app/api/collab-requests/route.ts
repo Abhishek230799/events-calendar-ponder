@@ -38,7 +38,7 @@ export async function GET() {
 // POST /api/collab-requests
 // body: { toId: string, eventId?: string, message?: string }
 // Deliberately minimal — persists a row, nothing more. No fake "delivered"
-// state, no accept/reject flow yet, since the rest of Ponders' social graph
+// state, no accept/reject flow yet, since the rest of Ponder's social graph
 // and notifications don't exist to build that on top of.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();

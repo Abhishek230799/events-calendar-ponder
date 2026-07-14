@@ -58,7 +58,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
             <span className={`block h-[2px] w-4 bg-current transition-transform duration-200 ${open ? "-translate-y-[5px] -rotate-45" : ""}`} />
           </div>
         </button>
-        <Image src="/logo.png" alt="Ponders" width={110} height={28} priority className="brightness-125 contrast-110" />
+        <Image src="/logo.png" alt="Ponder" width={110} height={28} priority className="brightness-125 contrast-110" />
       </div>
 
       <div className="relative z-10 flex flex-1 overflow-hidden">
