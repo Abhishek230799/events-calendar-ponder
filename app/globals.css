@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* --- Ponders dark theme (default, not OS-conditional) --- */
+:root {
+  --color-bg: #0f0e15;
+  --color-surface: #17151f;
+  --color-surface-hover: #211e2c;
+  --color-border: #2c2836;
+  --color-ink: #f3f1f8;
+  --color-ink-muted: #9891a8;
+
+  --color-violet: #8b7ffa;
+  --color-violet-soft: rgba(139, 127, 250, 0.14);
+  --color-coral: #ff8272;
+  --color-mint: #3fe0cd;
+  --color-amber: #ffc257;
+  --color-sky: #6ab8ff;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+::selection {
+  background: var(--color-violet-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-violet);
+  outline-offset: 2px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  handle        String    @unique
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  country       String?   // ISO 3166-1 alpha-2 (e.g. "IN", "US") — filters which Holiday rows this creator sees
+  createdAt     DateTime  @default(now())
+
+  accounts               Account[]
+  sessions               Session[]
+  eventsCreated          Event[]         @relation("EventHost")
+  rsvps                  Rsvp[]
+  pipelineItems          PipelineItem[]
+  collabRequestsSent     CollabRequest[] @relation("CollabFrom")
+  collabRequestsReceived CollabRequest[] @relation("CollabTo")
+  notifications          Notification[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum EventCategory {
+  LIVESTREAM
+  COLLAB
+  BRAND_MEETING
+  CONTENT_DEADLINE
+  COMMUNITY
+  INDUSTRY_EVENT
+  MUSIC
+  SPORTS
+  ARTS_THEATRE
+  FILM
+  OTHER
+}
+
+enum EventSource {
+  PLATFORM
+  CONFS_TECH
+  TICKETMASTER
+}
+
+model Event {
+  id              String        @id @default(cuid())
+  title           String
+  description     String?
+  category        EventCategory @default(OTHER)
+  location        String?
+  isVirtual       Boolean       @default(true)
+
+  startAt         DateTime
+  endAt           DateTime
+  timezone        String        @default("UTC")
+
+  recurrenceRule  String? // iCal RRULE string, e.g. "FREQ=WEEKLY;BYDAY=MO". Null = one-off event.
+  reminderOffsets Int[]         @default([60]) // minutes-before-start
+
+  hostId          String? // nullable — imported events (Ticketmaster/confs.tech) have no creator host
+  host            User?         @relation("EventHost", fields: [hostId], references: [id])
+
+  source          EventSource   @default(PLATFORM)
+  externalId      String? // the source API's own event ID, used to dedupe on re-sync
+  countryCode     String?       // ISO 3166-1 alpha-2 — set for TICKETMASTER/CONFS_TECH events; null for PLATFORM ones (a creator's own event is visible everywhere)
+
+  rsvps           Rsvp[]
+  notifications   Notification[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([source, externalId]) // NULLs are distinct in Postgres, so PLATFORM events (externalId = null) never collide
+  @@index([startAt])
+  @@index([hostId, createdAt]) // powers the event-creation rate limit check
+}
+
+// Read-only calendar labels. No relation to Event on purpose — nobody RSVPs
+// to a holiday. If a real Event happens to fall on the same date, that
+// Event is what's RSVP-able; the two only ever meet at render time.
+model Holiday {
+  id          String   @id @default(cuid())
+  date        DateTime
+  name        String
+  localName   String?
+  countryCode String // ISO 3166-1 alpha-2, matches Nager.Date's format
+
+  @@unique([date, countryCode, name]) // safe to re-sync yearly without duplicating rows
+  @@index([countryCode, date])
+}
+
+enum RsvpStatus {
+  GOING
+  INTERESTED
+  DECLINED
+}
+
+model Rsvp {
+  id      String     @id @default(cuid())
+  eventId String
+  event   Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User       @relation(fields: [userId], references: [id])
+  status  RsvpStatus @default(GOING)
+
+  // Private by default. Still counts toward the trending/"going" number —
+  // it only controls whether this RSVP shows up in the attendee list.
+  visible Boolean    @default(false)
+
+  // "series" = RSVP'd to the whole series (or the only occurrence, for a
+  // one-off event). Otherwise, that occurrence's ISO original-start
+  // timestamp. Non-nullable on purpose: a nullable column here would let
+  // Postgres silently allow duplicate series-level RSVPs, since NULL isn't
+  // equal to NULL for uniqueness purposes.
+  occurrenceKey String @default("series")
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, userId, occurrenceKey])
+  @@index([eventId])
+}
+
+enum PipelineStatus {
+  DRAFT
+  REVIEW
+  SCHEDULED
+  POSTED
+}
+
+// A creator's own content — always private to them, no relation to Event.
+// Only SCHEDULED/POSTED items (which have a scheduledFor date) render on
+// that creator's own calendar grid; DRAFT/REVIEW live on the pipeline board only.
+model PipelineItem {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id])
+
+  title        String
+  notes        String?
+  platform     String? // free text, not an enum — the set of platforms creators use isn't ours to fix
+  status       PipelineStatus @default(DRAFT)
+  scheduledFor DateTime? // required once status reaches SCHEDULED — enforced in the API route, not here
+
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([userId, status])
+  @@index([scheduledFor])
+}
+
+// Standalone/mocked for now — Ponders' broader social graph and
+// notifications don't exist yet, so this just needs to persist and be
+// honest about what it does: no fake "delivered" state, no accept/reject
+// flow. eventId is a loose reference (not a real FK) so a deleted event
+// never cascades away a collab request that referenced it.
+enum CollabRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+model CollabRequest {
+  id        String   @id @default(cuid())
+  fromId    String
+  from      User     @relation("CollabFrom", fields: [fromId], references: [id])
+  toId      String
+  to        User     @relation("CollabTo", fields: [toId], references: [id])
+  eventId   String?
+  message   String?
+  status    CollabRequestStatus @default(PENDING)
+  cancelReason String?
+  createdAt DateTime @default(now())
+
+  @@index([toId])
+}
+
+// Dedup + delivery log for reminders, so the cron job never double-sends.
+// occurrenceStart + offsetMinutes together identify "this specific reminder
+// for this specific occurrence" — the unique constraint is what makes
+// lib/reminders.ts safe to run repeatedly/overlap without duplicate sends.
+model Notification {
+  id              String    @id @default(cuid())
+  eventId         String
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+
+  occurrenceStart DateTime
+  offsetMinutes   Int
+  sentAt          DateTime  @default(now())
+  readAt          DateTime?
+
+  @@unique([eventId, userId, occurrenceStart, offsetMinutes])
+  @@index([userId, readAt])
+}
